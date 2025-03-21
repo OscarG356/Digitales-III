@@ -3,9 +3,16 @@
 Este repositorio contiene todos los laboratorios desarrollados durante el semestre de la asignatura **Electrónica Digital 3**.
 
 ## 📂 Estructura del Repositorio
-- **Lab01** - Permutaciones gráciles
+
+- **Lab1** - Permutaciones gráciles
 - ...
 
+### Teoria
+
+- **Clock** - Manejo del tiempo.
+- **Return_Vector** - Cómo retornar vectores en C.
+
 Cada carpeta contiene:
+
 - Código fuente en **C**
 - Informe de laboratorio.
