@@ -1,0 +1,42 @@
+# Archivos de compilación
+*.o
+*.obj
+*.so
+*.a
+*.lib
+*.dll
+*.exe
+*.out
+*.elf
+*.map
+
+# Directorios de compilación
+/build/
+/bin/
+/lib/
+/obj/
+
+# Archivos de depuración
+*.d
+*.gcda
+*.gcno
+*.gcov
+
+# Archivos de IDEs y editores de código
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+*.tmp
+*.log
+
+# Archivos de configuración del sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de CMake y Make
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
