@@ -4,7 +4,8 @@
 #include <math.h>
 #include <time.h>
 
-#define MAX_N 41
+#define MAX_N 50
+#define MIN_N 1
 
 int permutation[MAX_N];
 bool used[MAX_N] = {false};
@@ -51,7 +52,11 @@ int main() {
     scanf("%d", &n);
     
     if (n > MAX_N) {
-        printf("El valor de n es demasiado grande. Aumente MAX_N.\n");
+        printf("El valor de n es demasiado grande.\n");
+        return 1;
+    }
+    if(n<MIN_N){
+        printf("El valor de n es demasiado pequeño.\n");
         return 1;
     }
     
