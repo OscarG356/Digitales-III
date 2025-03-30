@@ -1,4 +1,4 @@
-# Archivos de compilación
+# Archivos de compilación de C
 *.o
 *.obj
 *.so
@@ -16,6 +16,25 @@
 /lib/
 /obj/
 
+# Archivos de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+*.ipynb_checkpoints/
+
+# Archivos de entorno virtual
+.venv/
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Archivos de Jupyter Notebook
+*.ipynb_checkpoints/
+
 # Archivos de depuración
 *.d
 *.gcda
@@ -31,12 +50,12 @@
 *.tmp
 *.log
 
-# Archivos de configuración del sistema
-.DS_Store
-Thumbs.db
-
 # Archivos de CMake y Make
 CMakeCache.txt
 CMakeFiles/
 Makefile
 cmake_install.cmake
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
