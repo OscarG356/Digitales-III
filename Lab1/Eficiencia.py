@@ -15,10 +15,11 @@ print("Tabla de datos:")
 print(df)
 
 # Crear una gráfica de líneas
-plt.plot(df['X'], df['Y'], marker='o', color='skyblue', label='Datos')
-plt.title('Gráfica de Datos')
-plt.xlabel('X')
-plt.ylabel('Y')
+plt.plot(df['X'], df['Y'], marker='o', color='skyblue', label='Duración de ejecución')
+plt.title('Eficiencia de Algoritmo')
+plt.xlabel('N cantidad de elementos')
+plt.ylabel('Tiempo de ejecución (ms)')
+plt.xlim(left=2, right=18) # Limitar el eje X
 plt.yscale('log')  # Escala logarítmica para manejar valores grandes
 plt.grid(axis='both', linestyle='--', alpha=0.7)
 plt.legend()
