@@ -12,6 +12,7 @@
 
 # Directorios de compilación
 /build/
+!/build/*.pdf
 /bin/
 /lib/
 /obj/
@@ -34,6 +35,43 @@ pip-delete-this-directory.txt
 
 # Archivos de Jupyter Notebook
 *.ipynb_checkpoints/
+
+# Archivos compilados de LaTeX
+*.aux
+*.bbl
+*.blg
+*.brf
+*.dvi
+*.fdb_latexmk
+*.fls
+*.ilg
+*.ind
+*.lof
+*.log
+*.lot
+*.nav
+*.out
+*.snm
+*.synctex.gz
+*.toc
+*.vrb
+*.idx
+
+# Archivos generados por editores LaTeX
+*.acn
+*.acr
+*.alg
+*.glg
+*.glo
+*.gls
+*.ist
+*.lo*
+*.maf
+*.mtc*
+*.run.xml
+
+# Archivos de VSCode
+.vscode/
 
 # Archivos de depuración
 *.d
