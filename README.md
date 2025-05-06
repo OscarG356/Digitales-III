@@ -5,6 +5,7 @@ Este repositorio contiene todos los laboratorios desarrollados durante el semest
 ## 📂 Estructura del Repositorio
 
 - **Lab1** - Permutaciones gráciles
+- **Lab2** - Caracterización de un motor DC usando Arduino y MicroPython
 - ...
 
 ### Teoria
