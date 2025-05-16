@@ -12,6 +12,7 @@ Este repositorio contiene todos los laboratorios desarrollados durante el semest
 
 - **Clock** - Manejo del tiempo.
 - **Return_Vector** - Cómo retornar vectores en C.
+- **Pico SDK** - Programar el SDK usando VS Code.
 
 Cada carpeta contiene:
 
