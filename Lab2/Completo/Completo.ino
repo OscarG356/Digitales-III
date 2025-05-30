@@ -3,7 +3,7 @@
  * @brief Sistema de caracterización de motores DC con interfaz serial
  * @author Imar Jimenez y Oscar Gutierrez
  * @date 5/05/2025
- * 
+ *  
  * Este sistema caracteriza el rendimiento de motores DC midiendo la respuesta en RPM
  * ante diferentes valores de PWM. Ofrece dos modos de operación:
  * 1. Control manual de PWM con visualización en tiempo real de las RPM
@@ -11,12 +11,13 @@
  */
 
 // ------------------ CONFIGURACIÓN DE PINES ------------------
-const int in1Pin = 2;   ///< Pin de dirección 1 del puente H (L298N)
-const int in2Pin = 3;   ///< Pin de dirección 2 del puente H
-const int enAPin = 4;   ///< Pin PWM para control de velocidad
+const int in1Pin = 12;   ///< Pin de dirección 1 del puente H (L298N)
+const int in2Pin = 13;   ///< Pin de dirección 2 del puente H
+const int enAPin = 11;   ///< Pin PWM para control de velocidad
 
 // ------------------ CONFIGURACIÓN DEL ENCODER ------------------
-const int encoderPin = 5;           ///< Pin de entrada del encoder óptico
+const int encoderPin = 28
+;           ///< Pin de entrada del encoder óptico
 const int pulsesPerRevolution = 20; ///< Pulsos por revolución del encoder
 
 /**

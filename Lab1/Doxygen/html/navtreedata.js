@@ -24,22 +24,12 @@
 */
 var NAVTREE =
 [
-  [ "Graceful Permutations", "index.html", [
-    [ "Files", "files.html", [
-      [ "File List", "files.html", "files_dup" ],
-      [ "Globals", "globals.html", [
-        [ "All", "globals.html", null ],
-        [ "Functions", "globals_func.html", null ],
-        [ "Variables", "globals_vars.html", null ],
-        [ "Macros", "globals_defs.html", null ]
-      ] ]
-    ] ]
-  ] ]
+  [ "My Project", "index.html", ]
 ];
 
 var NAVTREEINDEX =
 [
-"files.html"
+"index.html"
 ];
 
 var SYNCONMSG = 'click to disable panel synchronization';
