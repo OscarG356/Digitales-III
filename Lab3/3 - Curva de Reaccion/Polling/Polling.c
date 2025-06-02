@@ -1,8 +1,10 @@
 #include "pico/stdlib.h"
 #include "hardware/pwm.h"
 #include "hardware/gpio.h"
-#include "hardware/timer.h"
+#include "hardware/flash.h"
+#include "hardware/sync.h"
 #include <stdio.h>
+#include <string.h>
 
 #define ENA_PIN 11
 #define IN1_PIN 12
@@ -12,21 +14,27 @@
 
 #define PWM_WRAP 10000
 #define PWM_FREQ_DIV 4.0f
-#define MAX_MUESTRAS 2000
+
+#define STEP_PWM 20
+#define MAX_PWM 100
+#define MUETREO_MS 4
+#define PASO_PWM_MS 2000
+#define BUFFER_MAX 10000  // depende de pasos y muestreo
+
 
 typedef struct {
-    uint32_t timestamp_ms;
+    uint32_t tiempo_ms;
     uint8_t pwm;
     float rpm;
-} Muestra;
+} Registro;
 
-Muestra buffer[MAX_MUESTRAS];
-volatile int indice_muestra = 0;
 volatile uint32_t pulsos = 0;
-
 uint slice;
-absolute_time_t tiempo_inicio;
 
+Registro buffer[BUFFER_MAX];
+uint32_t idx = 0;
+
+/** @brief Inicializa los pines del motor y PWM */
 void motor_init() {
     gpio_init(IN1_PIN);
     gpio_init(IN2_PIN);
@@ -37,87 +45,81 @@ void motor_init() {
 
     gpio_set_function(ENA_PIN, GPIO_FUNC_PWM);
     slice = pwm_gpio_to_slice_num(ENA_PIN);
-
     pwm_set_wrap(slice, PWM_WRAP);
     pwm_set_clkdiv(slice, PWM_FREQ_DIV);
     pwm_set_enabled(slice, true);
-    pwm_set_chan_level(slice, pwm_gpio_to_channel(ENA_PIN), 0);
 }
 
+/** @brief Cambia el duty cycle del PWM */
 void set_pwm(uint8_t duty) {
     if (duty > 100) duty = 100;
     uint level = (PWM_WRAP * duty) / 100;
     pwm_set_chan_level(slice, pwm_gpio_to_channel(ENA_PIN), level);
 }
 
+/** @brief Calcula la RPM a partir del número de pulsos */
 float calcular_rpm(uint32_t pulsos, float intervalo_s) {
     return (pulsos / (float)PULSOS_POR_REV) / intervalo_s * 60.0f;
 }
 
-// Función para muestreo a 250 Hz (cada 4 ms)
-bool muestrear(struct repeating_timer *t) {
-    static absolute_time_t ultimo = {0};
-    absolute_time_t ahora = get_absolute_time();
-    float intervalo = to_ms_since_boot(ahora) - to_ms_since_boot(ultimo);
-    ultimo = ahora;
-
-    if (indice_muestra < MAX_MUESTRAS) {
-        float rpm = calcular_rpm(pulsos, intervalo / 1000.0f);
-        buffer[indice_muestra].timestamp_ms = to_ms_since_boot(ahora) - to_ms_since_boot(tiempo_inicio);
-        buffer[indice_muestra].pwm = pwm_get_chan_level(slice, pwm_gpio_to_channel(ENA_PIN)) * 100 / PWM_WRAP;
-        buffer[indice_muestra].rpm = rpm;
-        indice_muestra++;
-    }
-    pulsos = 0;
-    return true;
-}
-
-void guardar_csv() {
-    FILE *f = fopen("reaccion.csv", "w");
-    if (!f) return;
-    fprintf(f, "tiempo_ms,pwm,rpm\n");
-    for (int i = 0; i < indice_muestra; i++) {
-        fprintf(f, "%lu,%u,%.2f\n", buffer[i].timestamp_ms, buffer[i].pwm, buffer[i].rpm);
-    }
-    fclose(f);
-}
 
 int main() {
     stdio_init_all();
-
     gpio_init(ENCODER_PIN);
     gpio_set_dir(ENCODER_PIN, GPIO_IN);
     gpio_pull_up(ENCODER_PIN);
 
     motor_init();
 
-    tiempo_inicio = get_absolute_time();
+    bool estado_anterior = gpio_get(ENCODER_PIN);
+    absolute_time_t t0 = get_absolute_time();
+    absolute_time_t t_muestra = t0;
+    absolute_time_t t_paso = t0;
 
-    // Polling simple de flanco
-    bool anterior = gpio_get(ENCODER_PIN);
+    int pwm = 0;
+    int direccion = 1;
 
-    // Timer de muestreo
-    struct repeating_timer timer;
-    add_repeating_timer_us(-4000, muestrear, NULL, &timer); // 4 ms
-
-    // Escalones de PWM: 0→100% y luego 100→0%
-    for (int pwm = 0; pwm <= 100; pwm += 20) {
-        set_pwm(pwm);
-        sleep_ms(2000);
-    }
-    for (int pwm = 100; pwm >= 0; pwm -= 20) {
-        set_pwm(pwm);
-        sleep_ms(2000);
-    }
-
-    // Apagar motor y detener timer
-    set_pwm(0);
-    cancel_repeating_timer(&timer);
-
-    // Guardar datos
-    guardar_csv();
+    set_pwm(pwm);
 
     while (true) {
-        tight_loop_contents(); // Esperar indefinidamente
+        bool estado_actual = gpio_get(ENCODER_PIN);
+        if (!estado_anterior && estado_actual) {
+            pulsos++;
+        }
+        estado_anterior = estado_actual;
+
+        absolute_time_t ahora = get_absolute_time();
+        int64_t delta_muestra = absolute_time_diff_us(t_muestra, ahora);
+        int64_t delta_paso = absolute_time_diff_us(t_paso, ahora);
+
+        if (delta_muestra >= MUETREO_MS * 1000 && idx < BUFFER_MAX) {
+            float t_ms = absolute_time_diff_us(t0, ahora) / 1000.0f;
+            float rpm = calcular_rpm(pulsos, MUETREO_MS / 1000.0f);
+            buffer[idx++] = (Registro){.tiempo_ms = (uint32_t)t_ms, .pwm = pwm, .rpm = rpm};
+            pulsos = 0;
+            t_muestra = ahora;
+        }
+
+        if (delta_paso >= PASO_PWM_MS * 1000) {
+            pwm += direccion * STEP_PWM;
+            if (pwm > MAX_PWM) {
+                pwm = MAX_PWM;
+                direccion = -1;
+            } else if (pwm < 0) {
+                break;  // Fin del ciclo de prueba
+            }
+            set_pwm(pwm);
+            t_paso = ahora;
+        }
     }
+
+    set_pwm(0);  // Apagar motor
+
+    // Enviar datos por serial en formato CSV
+    printf("Tiempo_ms,PWM,RPM\n");
+    for (uint32_t i = 0; i < idx; i++) {
+        printf("%lu,%d,%.2f\n", buffer[i].tiempo_ms, buffer[i].pwm, buffer[i].rpm);
+    }
+
+    while (true);  // Detener
 }
