@@ -98,3 +98,6 @@ cmake_install.cmake
 .DS_Store
 Thumbs.db
 *.zip
+
+# Archivos de documentación
+**/Doxygen
