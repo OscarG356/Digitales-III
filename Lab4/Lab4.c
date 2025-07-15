@@ -1,49 +1,66 @@
 #include <stdio.h>
+#include <math.h>
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "hardware/sync.h"
-#include "pico/time.h"
+#include "hardware/adc.h"
+#include "include/adc_audio.h"
 
-#define BUTTON_PIN 6
-#define LED_PIN 25 // Pin del LED integrado en la Raspberry Pi Pico
+#define NUM_SAMPLES 2048
+#define ADC_PIN 26 // GPIO26 = ADC0
+#define LED_PIN 25 // GPIO25 = LED integrado
+#define BUTTON_PIN 6 // GPIO6 = Botón
 
-volatile bool button_pressed = false;
-volatile uint32_t last_interrupt_time = 0; // Tiempo de la última interrupción
 
-// Callback que se llama cuando se genera una interrupción
+// Callback para manejar la interrupción del botón
 void gpio_callback(uint gpio, uint32_t events) {
-    uint32_t current_time = to_ms_since_boot(get_absolute_time());
     if (gpio == BUTTON_PIN && (events & GPIO_IRQ_EDGE_RISE)) {
-        // Antirrebote: Ignorar interrupciones rápidas
-        if (current_time - last_interrupt_time > 200) { // 200 ms de margen
-            button_pressed = true;
-            last_interrupt_time = current_time;
-        }
+        // No se necesita lógica adicional aquí, solo despertar el procesador
     }
 }
 
 int main() {
     stdio_init_all();
+    init_adc();
 
     // Inicializar el LED
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
-    gpio_put(LED_PIN, 1); // Encender el LED
 
     // Inicializar el botón
     gpio_init(BUTTON_PIN);
     gpio_set_dir(BUTTON_PIN, GPIO_IN);
     gpio_pull_down(BUTTON_PIN); // Configurar el botón con pulldown
 
-    // Configurar interrupción por flanco de bajada
+    // Configurar interrupción en el GPIO6
     gpio_set_irq_enabled_with_callback(BUTTON_PIN, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
-    while (true) {
-        __wfi(); // Espera hasta que ocurra una interrupción
 
-        if (button_pressed) {
-            printf("Botón presionado, mensaje enviado.\n");
-            button_pressed = false;
+    float samples[NUM_SAMPLES];
+
+    while (true) {
+        __wfi(); // Reducir consumo mientras espera
+
+        // 1. Tomar muestras
+        for (int i = 0; i < NUM_SAMPLES; i++) {
+            samples[i] = read_adc_voltage();
+            sleep_us(100); // 10 kHz = 100 µs
         }
+
+        // 2. Calcular RMS y dBFS usando funciones de la librería
+        float rms = calculate_rms(samples, NUM_SAMPLES);
+        float dbfs = calculate_dbfs(rms);
+
+        // 3. Imprimir
+        printf("Nivel de audio: %.2f dBFS\n", dbfs);
+
+        // Encender o apagar el LED según el nivel de audio
+        if (dbfs > -50) {
+            gpio_put(LED_PIN, 1); // Encender el LED
+        } else {
+            gpio_put(LED_PIN, 0); // Apagar el LED
+        }
+
+        sleep_ms(500); // Reducir consumo mientras espera
     }
 }
