@@ -15,7 +15,7 @@ float read_adc_voltage() {
     return (raw / 4095.0f) * 3.3f; // 12 bits, 3.3V ref
 }
 
-float calculate_rms(const float *samples, uint16_t num_samples) {
+float calculate_rms(const float *samples, uint32_t num_samples) {
     float sum = 0;
     for (uint16_t i = 0; i < num_samples; i++) {
         sum += samples[i];

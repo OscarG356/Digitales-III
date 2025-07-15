@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define NUM_SAMPLES 2048
+#define NUM_SAMPLES 20000
 #define ADC_PIN 26
 
 // Inicializar el ADC
@@ -13,7 +13,7 @@ void init_adc();
 float read_adc_voltage();
 
 // Calcular RMS de las muestras
-float calculate_rms(const float *samples, uint16_t num_samples);
+float calculate_rms(const float *samples, uint32_t num_samples);
 
 // Calcular nivel de audio en dBFS
 float calculate_dbfs(float rms);
