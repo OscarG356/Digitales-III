@@ -38,7 +38,8 @@ pico_sdk_init()
 add_executable(Lab4 
         Lab4.c
         src/adc_audio.c
-        src/nmea_parser.c)
+        src/nmea_parser.c
+        src/led_status.c)
 
 pico_set_program_name(Lab4 "Lab4")
 pico_set_program_version(Lab4 "0.1")
@@ -53,7 +54,8 @@ target_link_libraries(Lab4
         hardware_gpio
         hardware_irq
         hardware_sync
-        hardware_adc)
+        hardware_adc
+        hardware_pwm)
 
 # Add the standard include files to the build
 target_include_directories(Lab4 PRIVATE

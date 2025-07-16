@@ -6,10 +6,12 @@
 #include "hardware/uart.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
-#include "hardware/sync.h"
 #include "hardware/adc.h"
-#include "include/adc_audio.h"
+#include "hardware/sync.h"
+
 #include "include/nmea_parser.h"
+#include "include/adc_audio.h"
+#include "include/led_status.h"
 
 #define UART_ID uart1
 #define BAUD_RATE 9600
@@ -17,104 +19,170 @@
 #define UART_RX_PIN 9
 #define BUF_SIZE 256
 
+#define PPS_PIN 7
 #define BUTTON_PIN 6
-#define TIMEOUT_MS 5000      // Timeout GPS: 5 segundos
-#define ADC_INTERVAL_US 2500 // 2.5 ms entre muestras (400 Hz)
-#define NUM_SAMPLES 4000     // 10 segundos * 400 Hz
 
-volatile bool tomar_datos = false;
-volatile uint32_t last_press_ms = 0;
+volatile bool gps_lock = false;
+volatile bool boton_presionado = false;
+volatile uint32_t last_boton_ms = 0;
 
-// Callback del botón
-void gpio_callback(uint gpio, uint32_t events) {
+typedef enum {
+    ESTADO_INICIAL,
+    ESPERANDO_GPS,
+    ESPERANDO_BOTON,
+    CAPTURANDO_DATOS,
+    ESTADO_ERROR
+} estado_t;
+
+// --- Callbacks ---
+void gpio_global_callback(uint gpio, uint32_t events) {
     if (gpio == BUTTON_PIN && (events & GPIO_IRQ_EDGE_RISE)) {
         uint32_t now = to_ms_since_boot(get_absolute_time());
-        if (now - last_press_ms > 200) {
-            tomar_datos = true;
-            last_press_ms = now;
+        if (now - last_boton_ms > 200) {
+            boton_presionado = true;
+            last_boton_ms = now;
         }
+    }
+
+    if (gpio == PPS_PIN && (events & GPIO_IRQ_EDGE_RISE)) {
+        gps_lock = true;
     }
 }
 
-int main() {
-    stdio_init_all();
-    init_adc();
 
-    // Inicializar botón
-    gpio_init(BUTTON_PIN);
-    gpio_set_dir(BUTTON_PIN, GPIO_IN);
-    gpio_pull_down(BUTTON_PIN);
-    gpio_set_irq_enabled_with_callback(BUTTON_PIN, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
-
-    // Inicializar UART
+// --- Inicialización UART GPS ---
+void init_uart_gps() {
     uart_init(UART_ID, BAUD_RATE);
     gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
     gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
+}
 
-    // Esperar conexión USB
-    while (!stdio_usb_connected()) {
-        sleep_ms(100);
-    }
+// --- Inicialización GPIOs ---
+void init_botones_pps() {
+    gpio_init(BUTTON_PIN);
+    gpio_set_dir(BUTTON_PIN, GPIO_IN);
+    gpio_pull_down(BUTTON_PIN);
+    gpio_set_irq_enabled_with_callback(BUTTON_PIN, GPIO_IRQ_EDGE_RISE, true, &gpio_global_callback);
 
-    printf("USB conectado. Iniciando sistema...\n");
+    gpio_init(PPS_PIN);
+    gpio_set_dir(PPS_PIN, GPIO_IN);
+    gpio_pull_down(PPS_PIN);
+    gpio_set_irq_enabled(PPS_PIN, GPIO_IRQ_EDGE_RISE, true); 
+}
 
+// --- Captura de datos ---
+bool capturar_datos() {
     char line[BUF_SIZE];
     int index = 0;
     gps_data_t gps;
-    float samples[NUM_SAMPLES];
+    bool gps_valido = false;
 
-    while (true) {
-        if (tomar_datos) {
-            tomar_datos = false;
-            printf("\n📡 Esperando datos válidos del GPS (timeout 5s)...\n");
+    printf("\n📡 Esperando datos GPS válidos...\n");
+    uint64_t start = to_ms_since_boot(get_absolute_time());
 
-            uint64_t start_time = to_ms_since_boot(get_absolute_time());
-            bool found_valid_fix = false;
-
-            // Esperar GPS válido
-            while ((to_ms_since_boot(get_absolute_time()) - start_time) < TIMEOUT_MS) {
-                if (uart_is_readable(UART_ID)) {
-                    char c = uart_getc(UART_ID);
-                    if (c == '\n' || index >= BUF_SIZE - 1) {
-                        line[index] = '\0';
-                        index = 0;
-
-                        if (line[0] == '$' && nmea_parse_line(line, &gps) && gps.valid_fix) {
-                            found_valid_fix = true;
-                            break;
-                        }
-                    } else if (c != '\r') {
-                        line[index++] = c;
-                    }
+    while (to_ms_since_boot(get_absolute_time()) - start < 5000) {
+        if (uart_is_readable(UART_ID)) {
+            char c = uart_getc(UART_ID);
+            if (c == '\n' || index >= BUF_SIZE - 1) {
+                line[index] = '\0';
+                index = 0;
+                if (line[0] == '$' && nmea_parse_line(line, &gps) && gps.valid_fix) {
+                    gps_valido = true;
+                    break;
                 }
-            }
-
-            if (found_valid_fix) {
-                // Imprimir ubicación
-                printf("\n🛰️ Datos GPS válidos:\n");
-                printf("Latitud: %.6f° %c\n", gps.latitude, gps.lat_dir);
-                printf("Longitud: %.6f° %c\n", gps.longitude, gps.lon_dir);
-                printf("Fecha: %02d/%02d/%04d\n", gps.day, gps.month, gps.year);
-                printf("Hora: %02d:%02d:%02d\n", gps.hour, gps.minute, gps.second);
-                printf("Satélites: %d | Altitud: %.2f m | Fix: %d\n",
-                       gps.satellites, gps.altitude, gps.fix_quality);
-
-                // Tomar muestras ADC por 10 segundos
-                printf("\n🎙️ Midiendo audio por 10 segundos...\n");
-                for (uint32_t i = 0; i < NUM_SAMPLES; i++) {
-                    samples[i] = read_adc_voltage();
-                    sleep_us(ADC_INTERVAL_US);
-                }
-
-                float rms = calculate_rms(samples, NUM_SAMPLES);
-                float dbfs = calculate_dbfs(rms);
-                printf("🔊 Nivel de audio: %.2f dBFS\n", dbfs);
-
-            } else {
-                printf("\n🚫 No se obtuvo señal GPS válida en 5 segundos. No se midió audio.\n");
+            } else if (c != '\r') {
+                line[index++] = c;
             }
         }
+        if (boton_presionado) return false;
+    }
 
-        __wfi(); // Esperar interrupción del botón
+    if (!gps_valido) return false;
+
+    printf("✅ GPS OK: %.6f %c, %.6f %c\n", gps.latitude, gps.lat_dir, gps.longitude, gps.lon_dir);
+
+    float samples[NUM_SAMPLES];
+    for (int i = 0; i < NUM_SAMPLES; i++) {
+        if (boton_presionado) return false;
+        samples[i] = read_adc_voltage();
+        sleep_us(500);  // ~2kHz
+    }
+
+    float rms = calculate_rms(samples, NUM_SAMPLES);
+    float dbfs = calculate_dbfs(rms);
+    printf("🎤 Nivel de ruido: %.2f dBFS\n", dbfs);
+
+    return true;
+}
+
+// --- Main ---
+int main() {
+    stdio_init_all();
+    init_adc();
+    leds_init();
+    init_uart_gps();
+    init_botones_pps();
+
+    estado_t estado = ESTADO_INICIAL;
+
+    while (1) {
+        switch (estado) {
+            case ESTADO_INICIAL:
+                printf("🔁 Inicializando...\n");
+                led_off(LED_VERDE);
+                led_off(LED_NARANJA);
+                led_off(LED_ROJO);
+                estado = ESPERANDO_GPS;
+                break;
+
+            case ESPERANDO_GPS:
+                printf("⏳ Esperando señal GPS (PPS)...\n");
+                sleep_ms(500);
+                __wfi();
+                if (gps_lock) {
+                    led_show_ok();
+                    estado = ESPERANDO_BOTON;
+                }
+                break;
+
+            case ESPERANDO_BOTON:
+                printf("📴 Esperando botón...\n");
+                sleep_ms(500);
+                __wfi();
+                if (!gps_lock) {
+                    estado = ESTADO_ERROR;
+                    break;
+                }
+                if (boton_presionado) {
+                    boton_presionado = false;
+                    estado = CAPTURANDO_DATOS;
+                }
+                break;
+
+            case CAPTURANDO_DATOS:
+                led_off(LED_VERDE);
+                led_on(LED_NARANJA);
+                boton_presionado = false;
+                if (!gps_lock) {
+                    estado = ESTADO_ERROR;
+                } else if (!capturar_datos()) {
+                    led_show_error();
+                    sleep_ms(3000);
+                    estado = ESPERANDO_BOTON;
+                } else {
+                    led_blink_capture();  // parpadea 2 Hz, 3s
+                    estado = ESPERANDO_BOTON;
+                }
+                led_off(LED_NARANJA);
+                break;
+
+            case ESTADO_ERROR:
+                printf("❌ Error en el sistema\n");
+                led_show_error();
+                sleep_ms(3000);
+                estado = ESPERANDO_GPS;
+                led_off(LED_ROJO);
+                break;
+        }
     }
 }
