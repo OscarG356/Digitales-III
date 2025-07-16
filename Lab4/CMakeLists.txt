@@ -37,7 +37,8 @@ pico_sdk_init()
 
 add_executable(Lab4 
         Lab4.c
-        src/adc_audio.c)
+        src/adc_audio.c
+        src/nmea_parser.c)
 
 pico_set_program_name(Lab4 "Lab4")
 pico_set_program_version(Lab4 "0.1")
