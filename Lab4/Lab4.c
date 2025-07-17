@@ -12,6 +12,7 @@
 #include "include/nmea_parser.h"
 #include "include/adc_audio.h"
 #include "include/led_status.h"
+#include "include/eeprom.h"
 
 #define UART_ID uart1
 #define BAUD_RATE 9600
@@ -31,6 +32,7 @@ typedef enum {
     ESPERANDO_GPS,
     ESPERANDO_BOTON,
     CAPTURANDO_DATOS,
+    INTERFAZ_SERIAL,
     ESTADO_ERROR
 } estado_t;
 
@@ -112,6 +114,8 @@ bool capturar_datos() {
     float dbfs = calculate_dbfs(rms);
     printf("🎤 Nivel de ruido: %.2f dBFS\n", dbfs);
 
+    eeprom_guardar_captura(dbfs, gps.latitude, gps.longitude);
+
     return true;
 }
 
@@ -122,6 +126,7 @@ int main() {
     leds_init();
     init_uart_gps();
     init_botones_pps();
+    eeprom_init();
 
     estado_t estado = ESTADO_INICIAL;
 
@@ -132,7 +137,29 @@ int main() {
                 led_off(LED_VERDE);
                 led_off(LED_NARANJA);
                 led_off(LED_ROJO);
-                estado = ESPERANDO_GPS;
+
+
+                char comando[8] = {0};
+                int i = 0;
+                // Leer comando por USB bloqueante
+                while (i < sizeof(comando) - 1) {
+                    int c = getchar();  // bloqueante
+                    if (c == '\n' || c == '\r') {
+                        comando[i] = '\0';
+                        break;
+                    }
+                    comando[i++] = (char)c;
+                }
+
+                if (strcmp(comando, "serial") == 0) {
+                    estado = INTERFAZ_SERIAL;
+                } else if (strcmp(comando, "gps") == 0) {
+                    estado = ESPERANDO_GPS;
+                } else {
+                    printf("❌ Comando no reconocido. Usa 'gps' o 'serial'.\n");
+                    sleep_ms(1000);
+                }
+
                 break;
 
             case ESPERANDO_GPS:
@@ -171,10 +198,52 @@ int main() {
                     estado = ESPERANDO_BOTON;
                 } else {
                     led_blink_capture();  // parpadea 2 Hz, 3s
-                    estado = ESPERANDO_BOTON;
+                    estado = ESPERANDO_GPS;
                 }
                 led_off(LED_NARANJA);
                 break;
+            
+            case INTERFAZ_SERIAL:
+                printf("🔌 Interfaz serial activa...\n");
+                led_on(LED_VERDE);
+                led_on(LED_NARANJA);
+                led_on(LED_ROJO);
+
+                while (1) {
+                    char comando[16] = {0};
+                    int i = 0;
+
+                    while (i < sizeof(comando) - 1) {
+                        int c = getchar_timeout_us(0);  // No bloquea indefinidamente
+                        if (c == PICO_ERROR_TIMEOUT) {
+                            sleep_ms(100);  // Evita bucle rápido
+                            continue;
+                        }
+
+                        if (c == '\r' || c == '\n') {
+                            comando[i] = '\0';
+                            break;
+                        }
+                        comando[i++] = (char)c;
+                    }
+
+                    if (strcmp(comando, "q") == 0) {
+                        led_off(LED_VERDE);
+                        led_off(LED_NARANJA);
+                        led_off(LED_ROJO);
+                        estado = ESPERANDO_GPS;
+                        break;
+                    } else if (strcmp(comando, "dump") == 0) {
+                        eeprom_ver_datos();
+                    } else if (strcmp(comando, "delete") == 0) {
+                        eeprom_flush();
+                    } else {
+                        printf("Comando no reconocido. Usa 'dump', 'delete', o 'q'.\n");
+                    }
+                }
+                break;
+
+
 
             case ESTADO_ERROR:
                 printf("❌ Error en el sistema\n");
