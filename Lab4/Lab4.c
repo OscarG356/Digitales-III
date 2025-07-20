@@ -1,3 +1,18 @@
+/**
+ * @file Lab4.c
+ * @brief Programa principal para la captura de datos GPS y nivel de ruido utilizando un microcontrolador Raspberry Pi Pico.
+ *
+ * Este programa implementa un sistema embebido que adquiere datos de ubicación geográfica mediante un módulo GPS
+ * y mide niveles de ruido ambiental usando un sensor de audio conectado al ADC. Los datos se almacenan
+ * en una memoria EEPROM externa, y el sistema se controla por medio de una máquina de estados.
+ *
+ * El flujo general incluye la inicialización del sistema, espera de señal GPS (PPS), captura de datos
+ * GPS y audio, almacenamiento en memoria, e interacción por interfaz serial.
+ *
+ * @author Imar y Oscar
+ * @date 2025
+ */
+
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
@@ -14,19 +29,23 @@
 #include "include/led_status.h"
 #include "include/eeprom.h"
 
+/// UART y Pines GPS
 #define UART_ID uart1
 #define BAUD_RATE 9600
 #define UART_TX_PIN 8
 #define UART_RX_PIN 9
 #define BUF_SIZE 256
 
+/// Pines de sincronización
 #define PPS_PIN 7
 #define BUTTON_PIN 6
 
-volatile bool gps_lock = false;
-volatile bool boton_presionado = false;
-volatile uint32_t last_boton_ms = 0;
+/// Variables globales compartidas entre interrupciones
+volatile bool gps_lock = false;              ///< Señal de sincronización GPS válida (PPS).
+volatile bool boton_presionado = false;      ///< Bandera de botón físico presionado.
+volatile uint32_t last_boton_ms = 0;         ///< Último tiempo de presión de botón.
 
+/// Máquina de estados principal
 typedef enum {
     ESTADO_INICIAL,
     ESPERANDO_GPS,
@@ -36,7 +55,55 @@ typedef enum {
     ESTADO_ERROR
 } estado_t;
 
-// --- Callbacks ---
+/**
+ * @brief Callback global para manejar interrupciones de GPIO.
+ *
+ * Este callback se activa cuando se detecta un flanco de subida en los pines configurados
+ * (botón o PPS). Actualiza las variables globales correspondientes.
+ *
+ * @param gpio Número del pin GPIO que generó la interrupción.
+ * @param events Eventos asociados al GPIO (e.g., flanco de subida).
+ */
+void gpio_global_callback(uint gpio, uint32_t events);
+
+/**
+ * @brief Inicializa la UART para comunicación con el módulo GPS.
+ *
+ * Configura los pines TX y RX para UART y establece la velocidad de comunicación.
+ */
+void init_uart_gps();
+
+/**
+ * @brief Inicializa los GPIOs para el botón y la señal PPS.
+ *
+ * Configura los pines como entradas, habilita resistencias pull-down y registra
+ * las interrupciones correspondientes.
+ */
+void init_botones_pps();
+
+/**
+ * @brief Captura datos GPS y de audio.
+ *
+ * Este método espera datos válidos del módulo GPS y luego captura muestras de audio
+ * utilizando el ADC. Los datos capturados se almacenan en la EEPROM.
+ *
+ * @return true si la captura fue exitosa, false si hubo un error o se presionó el botón.
+ */
+bool capturar_datos();
+
+/**
+ * @brief Función principal del programa.
+ *
+ * Implementa una máquina de estados para manejar las diferentes etapas del sistema:
+ * inicialización, espera de señal GPS, espera de botón, captura de datos, interfaz serial y manejo de errores.
+ *
+ * @return int Código de retorno del programa (0 para éxito).
+ */
+int main();
+
+
+// --- Implementación ---
+
 void gpio_global_callback(uint gpio, uint32_t events) {
     if (gpio == BUTTON_PIN && (events & GPIO_IRQ_EDGE_RISE)) {
         uint32_t now = to_ms_since_boot(get_absolute_time());
@@ -51,15 +118,12 @@ void gpio_global_callback(uint gpio, uint32_t events) {
     }
 }
 
-
-// --- Inicialización UART GPS ---
 void init_uart_gps() {
     uart_init(UART_ID, BAUD_RATE);
     gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
     gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
 }
 
-// --- Inicialización GPIOs ---
 void init_botones_pps() {
     gpio_init(BUTTON_PIN);
     gpio_set_dir(BUTTON_PIN, GPIO_IN);
@@ -72,7 +136,6 @@ void init_botones_pps() {
     gpio_set_irq_enabled(PPS_PIN, GPIO_IRQ_EDGE_RISE, true); 
 }
 
-// --- Captura de datos ---
 bool capturar_datos() {
     char line[BUF_SIZE];
     int index = 0;
@@ -119,7 +182,6 @@ bool capturar_datos() {
     return true;
 }
 
-// --- Main ---
 int main() {
     stdio_init_all();
     init_adc();
@@ -138,12 +200,10 @@ int main() {
                 led_off(LED_NARANJA);
                 led_off(LED_ROJO);
 
-
                 char comando[8] = {0};
                 int i = 0;
-                // Leer comando por USB bloqueante
                 while (i < sizeof(comando) - 1) {
-                    int c = getchar();  // bloqueante
+                    int c = getchar();
                     if (c == '\n' || c == '\r') {
                         comando[i] = '\0';
                         break;
@@ -159,7 +219,6 @@ int main() {
                     printf("❌ Comando no reconocido. Usa 'gps' o 'serial'.\n");
                     sleep_ms(1000);
                 }
-
                 break;
 
             case ESPERANDO_GPS:
@@ -197,12 +256,12 @@ int main() {
                     sleep_ms(3000);
                     estado = ESPERANDO_BOTON;
                 } else {
-                    led_blink_capture();  // parpadea 2 Hz, 3s
+                    led_blink_capture();  // Parpadea 2 Hz, 3s
                     estado = ESPERANDO_GPS;
                 }
                 led_off(LED_NARANJA);
                 break;
-            
+
             case INTERFAZ_SERIAL:
                 printf("🔌 Interfaz serial activa...\n");
                 led_on(LED_VERDE);
@@ -212,14 +271,12 @@ int main() {
                 while (1) {
                     char comando[16] = {0};
                     int i = 0;
-
                     while (i < sizeof(comando) - 1) {
-                        int c = getchar_timeout_us(0);  // No bloquea indefinidamente
+                        int c = getchar_timeout_us(0);
                         if (c == PICO_ERROR_TIMEOUT) {
-                            sleep_ms(100);  // Evita bucle rápido
+                            sleep_ms(100);
                             continue;
                         }
-
                         if (c == '\r' || c == '\n') {
                             comando[i] = '\0';
                             break;
@@ -242,8 +299,6 @@ int main() {
                     }
                 }
                 break;
-
-
 
             case ESTADO_ERROR:
                 printf("❌ Error en el sistema\n");
